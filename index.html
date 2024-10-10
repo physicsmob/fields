@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title></title>
+    <style type="text/css">
+        html,body{
+  padding:0;
+  margin:0;
+  overflow:hidden;
+} 
+
+*{
+    box-sizing: border-box;
+    user-select: none;
+}
+
+#settings {
+    width: 20%;
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    border: solid white;
+    color: white;
+    padding: 10px;
+}
+
+input{
+    vertical-align: middle;
+}
+
+button{
+    width:100%;
+    margin-top: 10px;
+}
+
+input[type="range"]{
+    width: 100%;
+}
+
+
+
+
+    </style>
+
+</head>
+<body>
+    <div id="settings">
+        <div id="form-area">
+
+        <input id="show-vectors" type="checkbox" checked>
+        <label for="show-vectors">Vektörleri Göster</label>
+        </div>
+
+        <div id="form-area">
+
+        <input id="show-fields" type="checkbox" checked>
+        <label for="show-fields">Elektirik Alanı Göster</label>
+        </div>
+        <input type="range" min="-10" max="10">
+        <button id="add" onclick="add()">+1C yük skle</button>
+        <button id="togglestart">play</button>
+        <button id="reset" onclick="reset()">Reset</button>
+        Toplam yük sayısı : <span>0</span>
+    </div>
+    <canvas  id="fieldCanvas" width="800" height="600"></canvas>
+    <script type="text/javascript">
+
+
+
+
+
+
+        // Canvas ayarları
+const canvas = document.getElementById("fieldCanvas");
+const ctx = canvas.getContext("2d");
+canvas.setAttribute("width",window.innerWidth)
+canvas.setAttribute("height",window.innerHeight + 100)
+
+window.addEventListener('resize', () => {
+canvas.setAttribute("width",window.innerWidth)
+canvas.setAttribute("height",window.innerHeight + 100)
+
+})
+
+// Coulomb sabiti
+const k_e = 8.99 * Math.pow(10, 9);
+let showVectors = true
+let showFields = true
+
+let fixed = true
+
+let id = 0
+
+class Charge{
+   constructor(x,y,q,control){
+    this.path = []
+    this.control = control
+      this.q = null
+      this.qWithNoUnit = q || 1
+      this.x = x
+      this.y = y
+      this.vx = 0
+      this.vy = 0
+      this.mass = 1
+      this.forcex = 0
+      this.forcey = 0
+      this.id = id
+      this.const = true
+      this.r = 10
+      id++
+   }
+  getPos = () => {
+    return { x:this.x,y:this.y }
+  }
+    getField = (x,y) => {
+        if(this.x == x && this.y == y) {
+            // console.log(this.x,x,this.y,y)
+            return null
+        } else return calculateElectricField(x,y,this.getPos(),this.q)
+    }
+
+    update = (n) => {
+        if(this.x > canvas.width - 100 && this.y > canvas.height - 100) this.isDead = true
+        else this.isDead = false
+        // this.path.push([this.x,this.y])
+        if(this.path.length > 1000) this.path.shift()
+        this.q = 1e-9 * this.qWithNoUnit
+        if(fixed || this.control) return;
+        this.x = this.x+this.vx
+        this.y = this.y+this.vy
+        // return;
+        this.vx += (this.forcex/this.mass) 
+        this.vy += (this.forcey/this.mass) 
+        // if(this.x < 0 && this.x > canvas.width) {this.forcex = 0; this.vx *= -1}
+        // if(this.y < 0 && this.y > canvas.height) {this.vy *= -1}
+    }
+
+    draw = () => {
+        if(showVectors){
+
+     drawArrow(this.x,this.y,this.x+this.forcex*10000,this.y+this.forcey*10000,255,'white')
+        }
+      ctx.fillStyle = this.q > 0 ? "red" : "blue"
+      ctx.strokeStyle = this.q > 0 ? "red" : "blue"
+
+      if(this.qWithNoUnit == 0){
+        ctx.fillStyle = "white"
+        ctx.strokeStyle = "white"
+      }
+
+      ctx.beginPath()
+      ctx.arc(this.x, this.y, this.r, 0, 2 * Math.PI);
+      ctx.fill()
+
+        ctx.beginPath()
+      if(this.control) ctx.arc(this.x, this.y, this.r+5, 0, 2 * Math.PI);
+      ctx.stroke()
+
+      ctx.fillStyle = "white"
+      ctx.fillText(this.qWithNoUnit+"q",this.x - 6,this.y+3)
+      this.path.forEach(p => ctx.fillRect(p[0],p[1],5,5))
+
+    }
+}
+
+// const charges = [new Charge(300,400, -1)]
+// let charges = [new Charge(300,400, -1), new Charge(350,250 ) , new Charge(3,3)]
+// const charges = [new Charge(400,300,-1e-9)]
+let charges = []
+
+
+const gridSize = 50; 
+const arrowScale = 100000;
+
+function drawArrow(x1, y1, x2, y2,a,def) {
+    // a = 1
+    const headLength = 10; // Okun başının uzunluğu
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const angle = Math.atan2(dy, dx);
+    ctx.strokeStyle = def || `rgba(255,255,0,${a})`;
+    ctx.fillStyle = def || `rgba(255,255,0,${a})`;
+
+    // Çizgi
+    ctx.beginPath();  
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Ok başı
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headLength * Math.cos(angle - Math.PI / 6), y2 - headLength * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(x2 - headLength * Math.cos(angle + Math.PI / 6), y2 - headLength * Math.sin(angle + Math.PI / 6));
+    ctx.lineTo(x2, y2);
+    ctx.fill();
+}
+
+
+function calculateElectricField(x, y, qPos, q) {
+    const dx = x - qPos.x;
+    const dy = y - qPos.y;
+    const rSquared = dx * dx + dy * dy;
+    const r = Math.sqrt(rSquared);    
+    const E = k_e * q / rSquared;
+    const angle = Math.atan2(dy,dx)
+    const Ex = E * (dx / r);
+    const Ey = E * (dy / r);
+    // const Ex = Math.cos(angle)*E
+    // const Ey = Math.sin(angle)*E
+    if(x == qPos.x && y == qPos.y) return null
+    else return {Ex,Ey}
+}
+
+const getTotalField = (x,y,ignoreId) => {
+  var Ex = 0
+  var Ey = 0
+
+charges.forEach(c => {
+  const field = c.getField(x,y)
+  //console.log(field)
+
+  if(field){
+
+  Ex += field.Ex 
+  Ey += field.Ey 
+  }
+})
+
+  return {Ex,Ey}
+
+
+}
+
+
+// Vektör alanını çiz
+function drawElectricField() {
+    for (let x = gridSize / 2; x < canvas.width; x += gridSize) {
+        for (let y = gridSize / 2; y < canvas.height; y += gridSize) {  
+
+            const totalField = getTotalField(x,y)
+            const Ex = totalField.Ex
+            const Ey = totalField.Ey
+            const E = Math.sqrt((Ex**2+Ey**2))
+
+            //Vektörün son noktası (ölçeklendirilmiş)
+            // const x2 = x + Ex *arrowScale;
+            // const y2 = y + Ey * arrowScale;
+
+
+            const angle = Math.atan2(Ey,Ex)
+            const x2 = x + Math.cos(angle) *20;
+            const y2 = y + Math.sin(angle) *20;
+
+            // if((Ey**2+Ey**2)**(1/2) !== 0)
+            const max = 0.4
+
+            /*
+            max 255
+            x    ?
+            */
+
+            // drawArrow(x, y, x2, y2, 255);
+            drawArrow(x, y, x2, y2, (255*E)/max);
+            // ctx.fillText(Ex.toFixed(2),x,y)
+            // ctx.fillText(Ey.toFixed(2),x,y+10)
+        }
+    }
+}
+
+// Çizimi başlat
+
+loop = () => {
+    charges.forEach(c => {
+
+        // const c = charges[3]
+        c.update(c.id == 0)
+        const field = getTotalField(c.x,c.y,c.id)
+        c.forcex = c.q*field.Ex * 5e10
+        c.forcey = c.q*field.Ey * 5e10
+    })
+
+    // console.log(getTotalField(,4))
+
+
+
+  // ctx.clearRect(0,0,canvas.width,canvas.height)
+    ctx.fillStyle = "black"
+  ctx.fillRect(0,0,canvas.width,canvas.height)
+  if(showFields)drawElectricField();
+  charges.forEach(c => c.draw())
+    requestAnimationFrame(loop)
+
+}
+requestAnimationFrame(loop)
+let controledCharge = null;
+const btnToggle = document.querySelector('button#togglestart')
+const sumChargesNumber = document.querySelector('span')
+const rangeEl = document.querySelector('input[type="range"]')
+
+const add = q => {
+    if(rangeEl.value == 0) return;
+    const c = new Charge(canvas.width/2,canvas.height/2,rangeEl.value)
+    charges.push(c)
+    sumChargesNumber.innerHTML = charges.length
+
+}
+
+const toggleStart = () => {
+    btnToggle   .innerHTML = fixed ? 'pause' : 'play'
+    fixed = !fixed
+
+}
+
+const reset = () => {
+    charges = []
+        sumChargesNumber.innerHTML = charges.length
+
+}
+
+
+    const addPositive = document.querySelector('#add')
+
+btnToggle.addEventListener('click' , () => toggleStart())
+window.addEventListener('mouseup' , e => {
+    controledCharge = null
+    charges.forEach(c => c.control = false)
+        charges = charges.filter(c => !c.isDead)
+            sumChargesNumber.innerHTML = charges.length
+
+
+})
+
+
+rangeEl.addEventListener('input', e => {
+    console.log(e.target.value)
+    addPositive.innerHTML = e.target.value + "q 'luk yük ekle"
+})
+    addPositive.innerHTML = rangeEl.value + "q 'luk yük ekle"
+
+window.addEventListener('mousedown',e => {
+    const x = e.clientX
+    const y = e.clientY
+    const charge = charges.find(c => ((c.x - x)**2 + (c.y-y)**2) ** (1/2) < 15)
+    controledCharge = charge
+
+    if(charge) charge.control = true
+})
+
+window.addEventListener("mousemove" ,e => {
+
+  if(!controledCharge) return;
+  controledCharge.x = e.clientX
+  controledCharge.y = e.clientY
+  controledCharge.vx = 0
+  controledCharge.vy = 0
+
+
+})
+window.addEventListener("keydown" ,e => {
+const code = e.code.toLowerCase()
+
+      if(code == 'keyw') controledCharge.qWithNoUnit +=  1
+      if(code == 'keys') controledCharge.qWithNoUnit -=  1
+      if(code == 'space') controledCharge.qWithNoUnit *= -1
+    if(code == "keym") toggleStart() 
+
+
+})
+
+
+const showVectorsIn = document.querySelector('#show-vectors')
+const showFieldsIn = document.querySelector('#show-fields')
+showVectorsIn.addEventListener('input', e => {
+    showVectors = e.target.checked
+})
+showFieldsIn.addEventListener('input', e => {
+    showFields = e.target.checked
+})
+    </script>
+</body>
+</html>
